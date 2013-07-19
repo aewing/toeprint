@@ -1,0 +1,22 @@
+{
+    "name": "phenocode/toeprint",
+    "type": "framework",
+    "description": "ToePrint is a lightweight, PDO-powered, scalable MVC framework written in PHP.",
+    "keywords": ["mvc", "framework", "pdo", "library", "lightweight", "fast"],
+    "homepage": "https://github.com/phenocode/toeprint",
+    "license": "RPL",
+    "authors": [
+        {
+            "name": "Drew Ewing",
+            "email": "drew@phenocode.com",
+            "homepage": "http://phenocode.com/",
+            "role": "CEO & Senior Engineer"
+        }
+    ],
+    "require": {
+        "php": ">=5.0.0"
+    },
+    "autoload": {
+        "classmap": ["toeprint.php"]
+    }
+}
