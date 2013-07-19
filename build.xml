@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="ToePrint" basedir="." default="release">
-    <property file="./build.properties" />
+    <property file="./.buildproperties" />
 
     <property name="package" value="${phing.project.name}" override="true" />
     <property name="builddir" value="./build" />
@@ -18,14 +18,14 @@
     </target>
 
     <!-- Prepare debug -->
-    <target name="prepare-debug">
-        <echo msg="Creating debug build directory ./build/debug" />
-        <mkdir dir="./build/debug" />
+    <target name="prepare-devel">
+        <echo msg="Creating devel build directory ./build/devel" />
+        <mkdir dir="./build/devel" />
     </target>
 
     <!-- Debug Build Target -->
-    <target name="debug" description="Debug Target">
-        <copy todir="${builddir}/debug">
+    <target name="devel" description="Development Target">
+        <copy todir="${builddir}/devel">
             <fileset refid="srcfiles"/>
         </copy>
     </target>
