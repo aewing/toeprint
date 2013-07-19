@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="ToePrint" basedir="." default="release">
+    <property file="./build.properties" />
+
+    <property name="package" value="${phing.project.name}" override="true" />
+    <property name="builddir" value="./build" />
+    <property name="srcdir" value="./src" />
+
+    <!-- Source Fileset -->
+    <fileset dir="${srcdir}" id="srcfiles">
+        <include name="**"/>
+    </fileset>
+
+    <!-- Prepare all -->
+    <target name="prepare">
+        <echo msg="Creating build directory ./build" />
+        <mkdir dir="./build" />
+    </target>
+
+    <!-- Prepare debug -->
+    <target name="prepare-debug">
+        <echo msg="Creating debug build directory ./build/debug" />
+        <mkdir dir="./build/debug" />
+    </target>
+
+    <!-- Debug Build Target -->
+    <target name="debug" description="Debug Target">
+        <copy todir="${builddir}/debug">
+            <fileset refid="srcfiles"/>
+        </copy>
+    </target>
+
+    <!-- Prepare release -->
+    <target name="prepare-release">
+        <echo msg="Creating release build directory ./build/release" />
+        <mkdir dir="./build/release" />
+    </target>
+
+    <!-- Release Build Target -->
+    <target name="release" description="Release Target">
+        <copy todir="${builddir}/release">
+            <fileset refid="srcfiles"/>
+        </copy>
+    </target>
+</project>
