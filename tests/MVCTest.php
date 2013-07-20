@@ -15,6 +15,7 @@ class MVCTest extends PHPUnit_Framework_TestCase
         $this->assertEquals(1, $this->ba->getBalance());
         $this->ba->withdrawMoney(1);
         $this->assertEquals(0, $this->ba->getBalance());
+
     }
 }
 
