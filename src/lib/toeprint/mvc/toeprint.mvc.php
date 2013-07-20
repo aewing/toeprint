@@ -47,6 +47,9 @@ class toeprint_MVCApp extends toeprint_App {
         }
         return $this->router->route();
     }
+    public function getRoute($route) {
+        isset($this->routes[$route]) ? $this->routes[$route] : false;
+    }
     public function render() {
         $content = $this->route();
         if($this->layout) {
