@@ -13,6 +13,7 @@
          stopOnIncomplete="false"
          stopOnSkipped="false"
          strict="false"
+         bootstrap="tests/bootstrap.php"
          verbose="true">
     <testsuites>
         <testsuite name="ToePrint Test Suite">
