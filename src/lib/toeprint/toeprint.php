@@ -64,7 +64,7 @@ class tp{
      * @return array
      */
     static function request(){
-        $query = isset($_REQUEST['q'])?$_REQUEST['q']:false;
+        $query = (isset($_REQUEST) && isset($_REQUEST['q']))?$_REQUEST['q']:false;
         if($query) $parts = stristr($query,'/')?explode('/',$query):array($query);
         return ($query)?$parts:array();
     }
@@ -378,8 +378,7 @@ class toeprint_Router{
         try{
             $result = $this->routes[$winner]($params,$request);
         } catch(Exception $e){
-            echo '<h1>500 Error</h1>';
-            exit($e->getMessage());
+            throw new Exception("Unable to route: '" . $e->getMessage() . "'");
         }
         // Call the oncomplete callback
         if($oncomplete) call_user_func($oncomplete,$result);
