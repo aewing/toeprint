@@ -1,5 +1,6 @@
 <?php
 define('TOEPRINT_ROOT_PATH', dirname(__FILE__) . '/../');
+define('TOEPRINT_ROOT_URL', '/');
 require_once(dirname(__FILE__) . "/../src/lib/toeprint/toeprint.php");
 require_once(dirname(__FILE__) . "/../src/lib/toeprint/mvc/toeprint.mvc.php");
 class CoreTest extends PHPUnit_Framework_TestCase
