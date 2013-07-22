@@ -1,6 +1,6 @@
 <?php
-require_once("../src/lib/toeprint/toeprint.php");
-require_once("../src/lib/toeprint/mvc/toeprint.mvc.php");
+require_once(dirname(__FILE__) . "/../src/lib/toeprint/toeprint.php");
+require_once(dirname(__FILE__) . "/../src/lib/toeprint/mvc/toeprint.mvc.php");
 class CoreTest extends PHPUnit_Framework_TestCase
 {
     public function setUp()
