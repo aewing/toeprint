@@ -306,9 +306,9 @@ class toeprint_Router{
      * Route against the registered matches
      * @param mixed $oncomplete The method to call after routing
      */
-    function route($oncomplete = false){
+    function route($oncomplete = false, $request=false){
         // Get the tokenized request elements
-        $request = tp::request();
+        if(!$request) $request = tp::request();
         // Route Match Values
         $rmv = array();
         // Route Match Params
