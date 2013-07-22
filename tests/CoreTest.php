@@ -1,8 +1,9 @@
 <?php
-define('TOEPRINT_ROOT_PATH', dirname(__FILE__) . '/../');
+define('TOEPRINT_ROOT_PATH', realpath(dirname(__FILE__) . '/../'));
 define('TOEPRINT_ROOT_URL', '/');
-require_once(dirname(__FILE__) . "/../src/lib/toeprint/toeprint.php");
-require_once(dirname(__FILE__) . "/../src/lib/toeprint/mvc/toeprint.mvc.php");
+require_once("src/lib/toeprint/toeprint.php");
+require_once("src/lib/toeprint/mvc/toeprint.mvc.php");
+
 class CoreTest extends PHPUnit_Framework_TestCase
 {
     public function setUp()
@@ -15,18 +16,16 @@ class CoreTest extends PHPUnit_Framework_TestCase
         $this->assertEquals('test-this-slug', tp::slug('test this slug'));
         // Test Array of Slugs
         $slugmap = array(
-            'slug-test-1' => 'Slug Test 1!',
-            'slug-test-2' => '(Slug test #2)',
-            'slug-test-3' => 'Slug.Test.3'
+            'Slug Test 1!',
+            '(Slug test #2)',
+            'Slug.Test.3'
         );
-        $slugs = tp::slug($slugmap);
-        foreach($slugmap as $cslug => $title) {
-            $slug = array_shift($slugs);
-            $this->assertEquals($slug, $cslug);
-        }
+        $slug = tp::slug($slugmap);
+        $this->assertEquals('slug-test-1-slug-test-2-slug-test-3', $slug);
+
 
         // Test Request
-        $this->assertFalse(tp::request());
+        $this->assertType('array', tp::request());
 
         // Test mobile, tablet
         $mobile = tp::mobile();

@@ -49,6 +49,9 @@ class tp{
                 $buffer = preg_replace('/-+/',"-",$buffer);
             }
         }
+        while(stristr($buffer, '--')) {
+            $buffer = str_replace("--", "-", $buffer);
+        }
         return $buffer;
     }
     /**
@@ -104,7 +107,7 @@ class tp{
     static function mobile(){
         global $mobile;
         if(! $mobile){
-            require_once(TOEPRINT_LIB_PATH.'/mobile_detect/Mobile_Detect.php');
+            include_once(TOEPRINT_LIB_PATH.'/mobile_detect/Mobile_Detect.php');
             $mobile = new Mobile_Detect();
         }
         return $mobile;
