@@ -14,13 +14,19 @@
  */
 
 class toeprint_MVCApp extends toeprint_App {
+    private $modules = array();
     private $controllers = array();
     private $models = array();
     private $views = array();
     private $routes = array();
     public $config = array();
+    public $activeRoute = false;
+    /**
+     * @var toeprint_Layout
+     */
     public $layout = false;
     public $mobileStatus = false;
+    public $navItems = array();
     public function __construct($config=false) {
         parent::__construct($config);
         $md = tp::mobile();
@@ -31,29 +37,57 @@ class toeprint_MVCApp extends toeprint_App {
         }
     }
     public function registerController($name, $routes, $controller) {
+        $this->routes[$name] = array();
         foreach($routes as $route => $action) {
-            $this->routes[$route] = array($controller, $action);
+            $this->routes[$name][$route] = array($controller, $action);
         }
+    }
+    public function registerModule($name, $config) {
+        $name = strtolower(tp::slug($name));
+        $controllers = isset($config->controllers) ? $config->controllers : array();
+        unset($config->controllers);
+        $this->modules[$name] = $config;
+        foreach($controllers as $controller => $routes) {
+            $cname = $name . '_' . $controller;
+            $this->modules[$name]->routes[$controller] = array();
+            foreach($routes as $route => $action) {
+                $this->routes[$cname][$route] = array($cname, $action);
+            }
+        }
+    }
+    public function registerNavItems($items) {
+        $this->navItems = array_merge_recursive($this->navItems, $items);
     }
     public function route() {
         $this->router->reset();
-        foreach($this->routes as $route => $controller) {
-            list($class, $action) = $controller;
-            $app = $this;
-            $this->router->register($route, function($params, $request) use ($action, $class, &$app) {
-                $obj = new $class;
-                return $obj->route($app, $action, $params);
-            });
+        foreach($this->routes as $controllerName => $routes) {
+            foreach($routes as $route => $controller) {
+                list($class, $action) = $controller;
+                $app = $this;
+                $this->router->register($route, function($params, $request) use ($action, $class, &$app) {
+                    $obj = new $class($app);
+                    return $obj->route($action, $params);
+                });
+            }
         }
-        return $this->router->route();
+        return $this->router->route(function($winner, &$result) {
+            $this->activeRoute = $winner;
+            $this->layout->assign('activeRoute', $winner);
+        });
     }
-    public function getRoute($route) {
-        isset($this->routes[$route]) ? $this->routes[$route] : false;
+    public function getRoute($which) {
+        foreach($this->routes as $controller => $routes) {
+            foreach($routes as $route => $controller) {
+                if($route == $which) return $controller;
+            }
+        }
+        return false;
     }
     public function render() {
         $content = $this->route();
         if($this->layout) {
             $this->layout->assign('pageContent', $content);
+            $this->layout->widget('navigation', array('items' => $this->navItems));
             echo $this->layout->render();
         } else {
             echo $content;
@@ -89,10 +123,10 @@ class toeprint_Model{
      * @param      $table
      * @param bool $fetchclass
      */
-    function __construct($handle,$table,$fetchclass = false){
-        $this->handle = $handle;
-        $this->table = $table;
-        $this->fetchclass = $fetchclass?$fetchclass:toeprint_DBObject;
+    function __construct($table,$handle=false,$fetchclass = false){
+        $this->handle = $handle ? $handle : tp::pdo();
+        $this->table = $table ? $table : $this->table;
+        $this->fetchclass = $fetchclass?$fetchclass:"toeprint_PDO_Result";
     }
     /**
      * Fetch a row from the model
@@ -104,8 +138,21 @@ class toeprint_Model{
      * @param bool  $order  SQL ORDER clause, or false if none
      * @return mixed Fetched ResultSet object (or Row object for single)
      */
-    function fetch($what,$where = 1,$single = false,$join = false,$limit = false,$order = false){
-        return $this->handle->fetch($this->table,$what,$where,$single,$join,$limit,$order,$this->fetchclass);
+    function fetch($what=false,$where = 1,$single = false,$join = false,$limit = false,$order = false){
+        if(!$what) $what = '*';
+        if(!$this->handle) { throw new Exception("Invalid database handler"); }
+        $result = $this->handle->fetch($this->table,$what,$where,$single,$join,$limit,$order,$this->fetchclass);
+        if($single) {
+            return $this->sanitize($result, false);
+        } else {
+            if($result) $result = $result->toArray();
+            $clean = array();
+            foreach($result as $offset => $row) {
+                $clean[$offset] = $this->sanitize($row, false);
+            }
+            $result = $clean;
+        }
+        return $result;
     }
     /**
      * Update a model row or resultset
@@ -114,11 +161,28 @@ class toeprint_Model{
      * @return bool True on success, false on failure
      */
     function update($where,$what){
+        $what = $this->sanitize($what);
         if($where instanceof toeprint_PDO_ResultSet || $where instanceof toeprint_PDO_Result){
             return $where->update($what);
         } else{
             return $this->handle->update($this->table,$what,$where);
         }
+    }
+    /**
+     * Insert a model row
+     * @param $data The row data
+     * @return bool True on success, false on failure
+     */
+    function insert($data){
+        return $this->handle->insert($this->table,$this->sanitize($data));
+    }
+    /**
+     * Delete a model row
+     * @param $where The row or resultset object, or a SQL WHERE clause
+     * @return bool True on success, false on failure
+     */
+    function delete($where){
+        return $this->handle->delete($this->table,$where);
     }
     public function form($template, $action, $row=false) {
         $fields = $this->map();
@@ -127,6 +191,48 @@ class toeprint_Model{
             $formElements[$fieldName] = tpui::formField($field);
         }
         return tpui::form($template, $action, $formElements);
+    }
+
+    /**
+     * Sanitize model elements
+     * @param $row
+     * @param bool $incoming
+     */
+    public function sanitize($row, $incoming=true) {
+        if(is_object($row)) $row = $row->toArray();
+        foreach($this->map() as $var => $data) {
+            if(isset($row[$var])) {
+                $row_res = array($row[$var], $row, $var, $incoming);
+                if(isset($data['sanitize']) && is_callable($data['sanitize'])) {
+                    // Check for model "soft-hooks"
+                    $row[$var] = call_user_func_array($data['sanitize'], $row_res);
+                } else {
+                    // Check for field type sanitize hook
+                    $row[$var] = tp::hook('crud_sanitize[' . $data['type'] . ']', $row_res, $row[$var]);
+                }
+            }
+        }
+        return $row;
+    }
+
+    /**
+     * Validate model elements
+     * @param $row
+     * @param bool $incoming
+     */
+    public function validate($row, $incoming=true) {
+        foreach($this->map() as $var => $data) {
+            if(isset($row[$var])) {
+                if(isset($data['validate']) && is_callable($data['validate'])) {
+                    // Check for model "soft-hooks"
+                    call_user_func_array($data['validate'], array($row[$var], $row, $var, $incoming));
+                } else {
+                    // Check for field type validate hook
+                    $row[$var] = tp::hook('crud_validate[' . $data['type'] . ']', array($row[$var], $row, $var, $incoming), $row[$var]);
+                }
+            }
+        }
+        return $row;
     }
 }
 /**
@@ -141,36 +247,44 @@ class toeprint_Controller{
      * Toeprint Controller name
      * @var string
      */
-    private $name = false;
+    protected $name = false;
     /**
      * Path to the Toeprint Controller view directory
      * @var string
      */
-    private $viewpath = false;
+    protected $viewpath = false;
     /**
      * Toeprint Model (optional)
      * @var toeprint_Model
      */
-    private $model = false;
+    protected $model = false;
+    /**
+     * Toeprint App (optional)
+     * @var toeprint_MVCApp
+     */
+    protected $app = false;
     /**
      * Toeprint Controller Object
-     * @param bool $name  Toeprint Controller name
-     * @param bool $path  Path to the Toeprint Controller view directory
-     * @param bool $model Toeprint Model (optional)
+     * @param toeprint_MVCApp $app  Toeprint MVC Application
      */
-    public function __construct(){}
+    public function __construct(&$app){$this->app=$app;}
     /**
      * Activate routing for the controller
      * @param $action
      * @param $params
      * @return mixed
      */
-    public function route(&$app, $action,$params){
+    public function route($action,$params){
+        if(preg_match('/\$[0-9]/i', $action)) {
+            $offset = (str_replace('$','',$action)-1);
+            $action = isset($params[$offset]) ? $params[$offset] : 'index';
+            if($offset == 0) array_shift($params);
+        }
         $method = $action.'Route';
         if(method_exists($this,$method)){
-            return $this->$method($app, $params);
+            return $this->$method($params);
         } else{
-            return $this->indexRoute($app, $params);
+            return $this->indexRoute($params);
         }
     }
     /**
@@ -196,7 +310,7 @@ class toeprint_Controller{
      * @param array $params Route parameters
      * @return string Text/HTML content
      */
-    public function indexRoute(&$app, $params){
+    public function indexRoute($params){
         return '<div class="alert alert-error">404</div>';
     }
 }
@@ -221,5 +335,36 @@ class toeprint_View extends toeprint_Template{
         if(! $path) $path = $this->controller->getViewPath($action);
         if(! $path) throw new Exception("Unable to locate view template at '".$path."'");
         return parent::__construct($path);
+    }
+}
+class toeprint_Module {
+    public $name = false;
+    public $routes = false;
+    function __construct($name, $routes) {
+        $this->name = $name;
+        $this->routes = $routes;
+        $this->addRoutes($routes);
+    }
+    function addRoutes($routes) {
+        foreach($routes as $name => $route) {
+            $this->routes[$name] = $route;
+        }
+    }
+}
+/*
+ * Attempt to autoload model and controllers for MVC app instances
+ */
+function __autoload($class_name) {
+    if(stristr($class_name, '_')) {
+        $parts = explode('_', $class_name);
+        $class_name = array_pop($parts);
+        $folder = '/modules/' . strtolower(implode('/', $parts) . '/');
+    } else {
+        $folder = '/';
+    }
+    if(stristr($class_name, 'Controller') && file_exists(TOEPRINT_ROOT_PATH . $folder .  'controllers/' . $class_name . '.php')) {
+        require_once(TOEPRINT_ROOT_PATH . $folder . 'controllers/' . $class_name . '.php');
+    } elseif(stristr($class_name, 'Model') && file_exists(TOEPRINT_ROOT_PATH . $folder . 'models/' .  $class_name . '.php')) {
+        require_once(TOEPRINT_ROOT_PATH . $folder . 'models/' . $class_name . '.php');
     }
 }

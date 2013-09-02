@@ -12,15 +12,10 @@
  * For more details on this particular license see http://toeprint.phenocode.com/license
  * For more information on the RPL license please see http://en.wikipedia.org/wiki/Reciprocal_Public_License
  */
-define('TOEPRINT_INC_PATH',dirname(__FILE__));
-define('TOEPRINT_LIB_PATH',TOEPRINT_ROOT_PATH.'/lib');
-define('TOEPRINT_VIEW_PATH',TOEPRINT_ROOT_PATH.'/views');
-define('TOEPRINT_VIEW_URL',TOEPRINT_ROOT_URL.'/views');
-define('TOEPRINT_SCRIPT_URL',TOEPRINT_ROOT_URL.'/scripts');
-define('TOEPRINT_AUTOGLOBAL',true);
 $mobile = false;
 $tp_universal = array();
 $tp_hooks = array();
+$tp_routers = array();
 /**
  * Toeprint Utility Class.
  * The core of the Toeprint framework. Provides singleton bindings for common utilities and provides core functionality.
@@ -52,6 +47,7 @@ class tp{
         while(stristr($buffer, '--')) {
             $buffer = str_replace("--", "-", $buffer);
         }
+        if(substr($buffer, -1) == '-') $buffer = substr($buffer, 0, -1);
         return $buffer;
     }
     /**
@@ -60,7 +56,10 @@ class tp{
      * @return toeprint_Router
      */
     static function router($app = false){
-        return new toeprint_Router($app);
+        global $tp_routers;
+        if(!isset($tp_routers[$app]))
+            $tp_routers[$app] = new toeprint_Router($app);
+        return $tp_routers[$app];
     }
     /**
      * Parse the http request into a tokenized array
@@ -69,7 +68,26 @@ class tp{
     static function request(){
         $query = (isset($_REQUEST) && isset($_REQUEST['q']))?$_REQUEST['q']:false;
         if($query) $parts = stristr($query,'/')?explode('/',$query):array($query);
-        return ($query)?$parts:array();
+        $tmp = ($query)?$parts:array();
+        $result = array();
+        if(!empty($tmp)) foreach($tmp as $var => $val) { if(!empty($val)) $result[] = $val; }
+        return $result;
+    }
+
+    /**
+     * Get request, post, or get param
+     * @param $var          The parameter to get
+     * @param bool $val     Default value
+     * @param bool $from    The parameter source (post, get, request)
+     * @return bool         The param value, or the default value if not found
+     */
+    static function param($var, $val=false, $from=false) {
+        if(!$from) $from = $_REQUEST;
+        if(is_string($from)) $from = strtolower($from);
+        if($from == 'post') $from = $_POST;
+        elseif($from == 'get') $from = $_GET;
+        else $from = $_REQUEST;
+        return isset($from[$var]) ? $from[$var] : $val;
     }
     /**
      * Get a new toeprint template object
@@ -91,6 +109,18 @@ class tp{
      * @return toeprint_PDO $pdo
      */
     static function pdo($protocol = null,$host = null,$user = null,$pass = null,$db = null,$table_prefix = ''){
+        if($protocol == null) {
+            try {
+                $config = tp::config(TOEPRINT_ROOT_PATH . '/config.json');
+                $env = $config->activeEnvironment;
+                $db = $config->environments->$env->db;
+                $protocol = $db->protocol;
+                $host = $db->host;
+                $user = $db->user;
+                $pass = $db->pass;
+                $db = $db->db;
+            } catch(Exception $e) { exit($e->getMessage()); }
+        }
         return new toeprint_PDO($protocol,$host,$user,$pass,$db,$table_prefix);
     }
     /**
@@ -144,13 +174,14 @@ class tp{
      */
     static function hook($hook,&$params = false,$default = false){
         global $tp_hooks;
-        if(! isset($tp_hooks[$hook])) $tp_hooks[$hook] = array();
+        $hooklist = $tp_hooks[$hook];
+        if(! isset($hooklist)) $tp_hooks[$hook] = array();
         $result = $default;
-        while(! empty($tp_hooks[$hook])){
-            $method = array_pop($tp_hooks[$hook]);
+        while(! empty($hooklist)){
+            $method = array_pop($hooklist);
             $result = call_user_func_array($method,array(&$params,&$result));
         }
-        return $params;
+        return $result;
     }
     /**
      * Get, and optionally set, a universal variable
@@ -170,6 +201,59 @@ class tp{
         }
         return $tp_universals[$name];
     }
+    static function config($filename) {
+        if(file_exists($filename)) {
+            $config = json_decode(file_get_contents($filename));
+        } else {
+            $config = array();
+        }
+        return $config;
+    }
+    static function arrayToObject($array) {
+        $obj = new stdClass();
+        foreach($array as $var => $val) {
+            if(is_array($val)) {
+                $val = tp::arrayToObject($val);
+            }
+            $obj->$var = $val;
+        }
+        return $obj;
+    }
+    static function curl($url, $post=false, $return=true, $headers=false, $json=false) {
+        $ch = curl_init($url);
+        $params = '';
+        if($post) {
+            curl_setopt($ch, CURLOPT_POST, true);
+            if(is_array($post)) {
+                foreach($post as $var => $val) {
+                    if(is_array($val)) {
+                        foreach($val as $tvar => $tval) {
+                            $params .= urlencode($var . '[' . $tvar . ']') . '=' . urlencode($tval) . '&';
+                        }
+                    } else {
+                        $params .= urlencode($var) . '=' . urlencode($val) . '&';
+                    }
+                }
+                $params = substr($params, 0, strlen($params)-1);
+                curl_setopt($ch, CURLOPT_POSTFIELDS,  $params);
+            } else {
+                $params = $post;
+                curl_setopt($ch, CURLOPT_POSTFIELDS,  $params);
+            }
+        }
+        if($headers) {
+            curl_setopt($ch, CURLOPT_HEADER, $headers);
+        } else {
+            curl_setopt($ch, CURLOPT_HEADER, false);
+        }
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+        if($return) { curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); }
+        $result = curl_exec($ch);
+        curl_close($ch);
+        if($json) $result = json_decode($result,true);
+        return $result;
+    }
 }
 /**
  * Toeprint App Class.
@@ -186,6 +270,7 @@ class toeprint_App{
     protected $router = false;
     protected $options = array();
     public function __construct($config = array()){
+        if(is_string($config)) { $config = tp::config($config); }
         if(isset($config->activeEnvironment) && isset($config->environments)){
             $env = $config->activeEnvironment;
             $env = $config->environments->$env;
@@ -312,6 +397,7 @@ class toeprint_Router{
     function route($oncomplete = false, $request=false){
         // Get the tokenized request elements
         if(!$request) $request = tp::request();
+
         // Route Match Values
         $rmv = array();
         // Route Match Params
@@ -319,72 +405,83 @@ class toeprint_Router{
         // Prepare routes for iteration, prepare default route for fallback
         $routes = $this->routes;
         unset($routes['default']);
+
         // Iterate request, compare to routes
-        foreach($routes as $syntax => $method){
-            $sparts = (stristr($syntax,'/')?explode('/',$syntax):array($syntax));
-            $i = 0;
-            $iterating = true;
-            $value = 0;
-            $op = array();
-            $om = false;
-            // Iterates until there are no more routes or request elements, whichever number is greater
-            while($iterating){
-                // Check for a tokenized request element at this index
-                if(isset($request[$i])){
-                    // Check for a tokenized route syntax element at this index
-                    if(isset($sparts[$i])){
-                        if($sparts[$i] == $request[$i]){
-                            // If we have a match increase the value by 2
-                            $value += 2;
-                        } elseif($sparts[$i] == '*'){
-                            // Otherwise increase the value by 1, and open the system for further matching
+        if(!empty($routes)) {
+            foreach($routes as $syntax => $method){
+                $sparts = (stristr($syntax,'/')?explode('/',$syntax):array($syntax));
+                $i = 0;
+                $iterating = true;
+                $value = 0;
+                $op = array();
+                $om = false;
+                // Iterates until there are no more routes or request elements, whichever number is greater
+                while($iterating){
+                    // Check for a tokenized request element at this index
+                    if(isset($request[$i])){
+                        // Check for a tokenized route syntax element at this index
+                        if(isset($sparts[$i])){
+                            if($sparts[$i] == $request[$i]){
+                                // If we have a match increase the value by 2
+                                $value += 2;
+                            } elseif($sparts[$i] == '*'){
+                                // Otherwise increase the value by 1, and open the system for further matching
+                                $op[] = $request[$i];
+                                $om = true;
+                                $value ++;
+                            } elseif(! $om){
+                                $value = 0;
+                                $iterating = false;
+                            }
+                        } elseif($om){
+                            // If not a match element, but in an open match, add request element to params
                             $op[] = $request[$i];
-                            $om = true;
-                            $value ++;
-                        } elseif(! $om){
+                        } else{
                             $value = 0;
                             $iterating = false;
                         }
-                    } elseif($om){
-                        // If not a match element, but in an open match, add request element to params
-                        $op[] = $request[$i];
                     } else{
-                        $value = 0;
-                        $iterating = false;
+                        if($sparts[$i] == '*') {
+                            $om = true;
+                        } elseif(! $om) {
+                            // If no match at this index and an open match, this route has no value
+                            $value = 0;
+                            $iterating = false;
+                        }
                     }
-                } else{
-                    if(! $om){
-                        // If no match at this index and an open match, this route has no value
-                        $value = 0;
-                        $iterating = false;
-                    }
+                    // Advance iterator and make sure we still have something to iterate
+                    $i ++;
+                    if($i >= count($sparts) && $i >= count($request)) $iterating = false;
                 }
-                // Advance iterator and make sure we still have something to iterate
-                $i ++;
-                if($i >= count($sparts) && $i >= count($request)) $iterating = false;
-            }
-            // Set the Route Match Value & Route Match Params for this route
-            if($value){
-                $rmp[$syntax] = $op;
-                $rmv[$syntax] = $value;
+                // Set the Route Match Value & Route Match Params for this route
+                if($value){
+                    $rmp[$syntax] = $op;
+                    $rmv[$syntax] = $value;
+                }
             }
         }
+
         // Sort the routes by value
         arsort($rmv,SORT_ASC);
         reset($rmv);
+
+        // var_dump($rmv);
+
+
         // Select the best match
         $winner = key($rmv);
         $params = isset($rmp[$winner])?$rmp[$winner]:array();
         // If there is no match revert to default
-        if(! $winner) $winner = 'default';
+        if(! $winner || empty($winner)) $winner = 'default';
         // Attempt to fulfill the matched route
+        if(!isset($this->routes[$winner])) { throw new Exception("No valid route found."); }
         try{
             $result = $this->routes[$winner]($params,$request);
         } catch(Exception $e){
-            throw new Exception("Unable to route: '" . $e->getMessage() . "'");
+            throw new Exception("Unable to route: '" . $e->getMessage() . "' in " . $e->getFile() . " on line " . $e->getLine());
         }
         // Call the oncomplete callback
-        if($oncomplete) call_user_func($oncomplete,$result);
+        if($oncomplete) call_user_func_array($oncomplete,array($winner, &$result));
         return $result;
     }
 }
@@ -469,14 +566,15 @@ class toeprint_Template{
      * @return string
      */
     public function render($return = true){
-        if(file_exists($this->path) & substr($this->path,- 6) == '.phtml' && stristr($this->path,TOEPRINT_VIEW_PATH)){
-            ob_start();
+        $this->path = realpath($this->path);
+        if(file_exists($this->path) && substr($this->path,-6) == '.phtml') {
+            if($return) ob_start();
             require($this->path);
-            $result = ob_get_clean();
-            if($return) return $result; else echo $result;
+            if($return) $result = ob_get_clean();
+            if($return) return $result;
             return true;
         } else{
-            throw new Exception("Unable to render, invalid or non-existant template: '".$this->path."'");
+            throw new Exception("Unable to render, invalid or non-existant template: '".$this->path."', '" . substr($this->path,-6) . "', '" . TOEPRINT_VIEW_PATH . "'");
         }
     }
     /**
@@ -492,13 +590,23 @@ class toeprint_Template{
      * @param string $var The name of the variable being assigned
      * @param mixed  $val The value being assigned
      */
-    public function assign($var,$val = false){
+    public function assign($var,$val = false,$append=false){
         if(is_array($var)){
             foreach($var as $tvar => $tval){
-                $this->$tvar = $tval;
+                if($append && is_array($this->$tvar)) {
+                    $this->$tvar = array_merge_recursive($this->$tvar, $tval);
+                } else {
+                    $this->$tvar = $tval;
+                }
             }
-        } else{
-            $this->$var = $val;
+        } elseif($var) {
+            try {
+                if($append && is_array($this->$var)) {
+                    $this->$var = array_merge_recursive($this->$var, $val);
+                } else {
+                    $this->$var = $val;
+                }
+            } catch(Exception $e) {}
         }
     }
 }
@@ -576,6 +684,15 @@ class toeprint_PDO_Result{
         $id = $this->identifier;
         return $this->handle->delete($this->table,$this->data,array($id => $this->data->$id));
     }
+    /**
+     * Return an array containing row data
+     * @return resource
+     */
+    public function toArray(){
+        $result = array();
+        foreach($this->data as $var => $val) { $result[$var] = $val; }
+        return $result;
+    }
 }
 /**
  * Toeprint PDO ResultSet Class.
@@ -611,6 +728,21 @@ class toeprint_PDO_ResultSet{
      */
     public function results(){
         return $this->data;
+    }
+    /**
+     * Return an array containing row data
+     * @return resource
+     */
+    public function toArray(){
+        $results = $this->data;
+        $array = array();
+        foreach($results as $offset => $row) {
+            $array[$offset] = array();
+            foreach($row as $var => $val) {
+                $array[$offset][$var] = $val;
+            }
+        }
+        return $array;
     }
     /**
      * Catch all non-existant ResultSet requests and run them on the ResultSet Rows if applicable (called by system)
@@ -676,6 +808,10 @@ class toeprint_PDO{
         } catch(PDOException $e){
             $this->err = $e;
         }
+        $this->log = fopen(TOEPRINT_LOG_PATH . '/failed_queries.log', 'w+');
+        if(!$this->handle) {
+            throw new Exception("Unable to connect (" . $prefix . ", " . $user . ")");
+        }
     }
     /**
      * Set the PDO Object table prefix
@@ -704,7 +840,7 @@ class toeprint_PDO{
      * @param array  $array Array of var => val
      * @return string string            PDO WHERE clause string
      */
-    public function where_pair($table,$array){
+    public function where_pair($table,$array,$comma=false){
         if(! is_array($array) && ! is_object($array)){
             return $array;
         }
@@ -712,7 +848,7 @@ class toeprint_PDO{
         $off = 0;
         foreach($array as $var => $val){
             if($off > 0){
-                $where .= ' AND ';
+                $where .= $comma ? ', ' : ' AND ';
             }
             if(is_string($var)){
                 if(! stristr($var,'.')){
@@ -748,7 +884,8 @@ class toeprint_PDO{
             $handle->execute();
             return $handle;
         } catch(PDOException $e){
-            $this->err = $e;
+            fwrite($this->log, "[" . date('m/d/Y g:iA', time()) . " ]: \n" . $query . "\n");
+            $this->err = $e->getMessage();
             return false;
         }
     }
@@ -776,7 +913,8 @@ class toeprint_PDO{
      * @param array|string|bool $order  ORDER statement
      * @return toeprint_PDO_Result|toeprint_PDO_ResultSet   Returns matching row(s) on success, false on failure
      */
-    public function fetch($table,$cols = false,$where = false,$single = false,$join = false,$limit = false,$order = false){
+    public function fetch($table,$cols = false,$where = false,$single = false,$join = false,$limit = false,$order = false,$fetchclass=false){
+        if(!$fetchclass) $fetchclass = "toeprint_PDO_Result";
         if(! $cols){
             $cols = '*';
         }
@@ -787,6 +925,7 @@ class toeprint_PDO{
             $where = $this->where_pair($this->table_prefix.$table,$where);
         } elseif(! $where) $where = 1;
         $query = 'SELECT '.$cols.' FROM '.$this->table_prefix.$table.' '.$join.' WHERE '.$where;
+
         if($order != false){
             $query .= ' ORDER BY '.$order;
         }
@@ -795,11 +934,11 @@ class toeprint_PDO{
         }
         $result = $this->query($query);
         if($single && $result){
-            $result = $result->fetchAll(PDO::FETCH_CLASS,"toeprint_PDO_Result",array($table,$this,true));
-            $result = $result[0];
+            $result = $result->fetchAll(PDO::FETCH_CLASS,$fetchclass,array($table,$this,true));
+            $result = $result[0] ? $result[0] : false;
         } else{
             if(! class_exists('toeprint_PDO_Result')) exit();
-            $results = $result->fetchAll(PDO::FETCH_CLASS,"toeprint_PDO_Result",array($table,$this,true));
+            $results = $result->fetchAll(PDO::FETCH_CLASS,$fetchclass,array($table,$this,true));
             $result = new toeprint_PDO_ResultSet($results,$table,$this);
         }
         return $result;
@@ -813,12 +952,18 @@ class toeprint_PDO{
      */
     public function update($table,$data,$where = false){
         if(is_array($data) || is_object($data)){
-            $data = str_replace(" AND ",", ",$this->where_pair($this->table_prefix.$table,$data));
+            $data = $this->where_pair($this->table_prefix.$table,$data,true);
         }
         if(is_array($where)){
             $where = $this->where_pair($this->table_prefix.$table,$where);
         }
         $query = 'UPDATE '.$this->table_prefix.$table.' SET '.$data.' WHERE '.$where;
+        /*
+        $fp = fopen(TOEPRINT_ROOT_PATH . '/update.sql', 'w+');
+        fwrite($fp, $query);
+        fclose($fp);
+        var_dump($query);
+        */
         return $this->query($query);
     }
     /**
@@ -859,7 +1004,7 @@ class toeprint_PDO{
         foreach($data as $var => $val){
             $vars[] = $var;
             if(is_numeric($val)) $vals[] = $val; else
-                $vals[] = '"'.$val.'"';
+                $vals[] = '"'.addslashes($val).'"';
         }
         return array(implode(',',$vars),implode(',',$vals));
     }
@@ -903,5 +1048,8 @@ class toeprint_PDO{
      */
     public function handle(){
         return $this->handle;
+    }
+    public function __destruct() {
+        fclose($this->log);
     }
 }

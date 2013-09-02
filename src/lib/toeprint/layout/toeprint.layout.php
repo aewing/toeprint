@@ -15,8 +15,8 @@
 /**
  * The path to the views directory containing the layout(s)
  */
-define('TOEPRINT_LAYOUT_PATH',TOEPRINT_VIEW_PATH.'/layout');
-define('TOEPRINT_LAYOUT_URL',TOEPRINT_VIEW_URL.'/layout');
+define('TOEPRINT_LAYOUT_PATH',TOEPRINT_VIEW_PATH.'/layouts');
+define('TOEPRINT_LAYOUT_URL',TOEPRINT_VIEW_URL.'/layouts');
 /**
  * The directory name of the default layout (default is bootstrap-responsive)
  */
@@ -34,18 +34,9 @@ define('TOEPRINT_LAYOUT_DEFAULT_TEMPLATE','layout.phtml');
  */
 class toeprint_Layout extends toeprint_Template{
     public $layoutURL = false;
+    public $layoutPath = false;
     public $scripts = array();
     public $styles = array();
-    /**
-     * Layout title
-     * @var bool|string
-     */
-    private $title = false;
-    /**
-     * Navigation items
-     * @var array
-     */
-    private $nav_items = array();
     /**
      * Navigation template
      * @var toeprint_Template
@@ -67,6 +58,11 @@ class toeprint_Layout extends toeprint_Template{
      */
     private $_tassign = array();
     /**
+     * Array of layout-owned templates
+     * @var array
+     */
+    private $widgets;
+    /**
      * Toeprint Layout Object
      * @param string $path      The path to the layout file
      * @param string $title     The title of the layout (optional)
@@ -81,65 +77,39 @@ class toeprint_Layout extends toeprint_Template{
         }
         $this->nav_items = $nav_items;
         $this->nav_template = false;
-        $this->layoutURL = TOEPRINT_LAYOUT_URL.'/'.$this->name;
+        $preurl = defined('APP_LAYOUT_URL') ? APP_LAYOUT_URL : TOEPRINT_LAYOUT_URL;
+        $this->layoutURL = $preurl.'/'.$this->name;
+        $prepath = defined('APP_LAYOUT_PATH') ? APP_LAYOUT_PATH : TOEPRINT_LAYOUT_PATH;
+        $this->layoutPath = $prepath.'/'.$this->name;
     }
+
     /**
-     * Register a navigation element based on a string identifier
-     * @param string $id   String identifier
-     * @param array  $item Navigation item
+     * Retrieve and/or create a Layout widget object
+     * @param $title        Widget title
+     * @param bool $assign  Variables to assign
+     * @return mixed        The widget template
      */
-    function registerNavItem($id,$item){
-        $this->nav_items[$id] = $item;
-    }
-    /**
-     * Get a navigation element based on a string identifier
-     * @param unknown $id
-     * @return mixed Returns nav item if found, false otherwise
-     */
-    function getNavItem($id){
-        return issset($this->nav_items[$id])?$this->nav_items[$id]:false;
-    }
-    /**
-     * Register an array of navigation items to the layout
-     * @param array $items An array of navigation items
-     */
-    function registerNavItems($items){
-        foreach($items as $var => $val) $this->nav_items[$var] = $val;
-    }
-    /**
-     * Get an array of the currently registered navigation elements
-     * @return array
-     */
-    function getNavItems(){
-        return $this->nav_items;
-    }
-    /**
-     * Get the layout title
-     * @return string Layout title
-     */
-    function getTitle(){
-        return $this->title;
-    }
-    /**
-     * Set the layout title
-     * @param unknown $title Layout title
-     */
-    function setTitle($title){
-        $this->title = $title;
-    }
-    /**
-     * Returns the layout navigation template item
-     * @return toeprint_Template
-     */
-    function navigation(){
-        if(! $this->nav_template){
-            foreach($this->nav_items as $tag => $item){
-                // Clean links before rendering
-                $this->nav_items[$tag] = array_merge(array('text' => '','url' => '/','class' => '','container_class' => '','children' => false,'extra' => ''),$this->nav_items[$tag]);
+    function widget($title, $assign=false) {
+        if(!isset($this->widgets[$title])) {
+            $templatef = $this->layoutPath . '/widgets/' . $title . '.phtml';
+            if(file_exists($templatef)) {
+                $this->widgets[$title] = new toeprint_Template($templatef, $assign);
+            } else {
+                $this->widgets[$title] = false;
             }
-            $this->nav_template = new toeprint_Template(TOEPRINT_LAYOUT_PATH.'/'.$this->name.'/widgets/navigation/navigation.phtml',array('items' => $this->nav_items));
+        } else {
+            if($this->widgets[$title] && $assign) {
+                $this->widgets[$title]->assign($assign, true);
+            }
         }
-        return $this->nav_template;
+        return $this->widgets[$title];
+    }
+    /**
+     * Add a script to the layout
+     * @param $template
+     */
+    public function addScript($url, $full=false){
+        $this->scripts[$url] = $full;
     }
     /**
      * Set the active layout template
@@ -156,9 +126,10 @@ class toeprint_Layout extends toeprint_Template{
      */
     public function render($return = true){
         // Set the template path based on currently assigned template
-        $this->path = TOEPRINT_LAYOUT_PATH.'/'.$this->name.'/'.$this->active_template;
+        $prepath = defined('APP_LAYOUT_PATH') ? APP_LAYOUT_PATH : TOEPRINT_LAYOUT_PATH;
+        $this->path = $prepath.'/'.$this->name.'/'.$this->active_template;
         // Assert template existance
-        if(! file_exists($this->path)) throw new Exception("Unable to locate template '".$this->active_template.'" in layout "'.$this->name.'"');
+        if(! file_exists($this->path)) throw new Exception("Unable to locate template '".$this->active_template.'" in layout "'.$this->name.'" (' . $this->path . ')');
         // Create the layout template
         return parent::render($return);
     }
